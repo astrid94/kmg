@@ -76,7 +76,7 @@ class loginApi(Resource):
             if 'userId' not in parameter or parameter['userId'] is None :
                 hasParam = False
 
-            if 'userPwd' not in parameter or parameter['userPwd'] is None :
+            if 'userPassword' not in parameter or parameter['userPassword'] is None :
                 hasParam = False
 
             if hasParam:

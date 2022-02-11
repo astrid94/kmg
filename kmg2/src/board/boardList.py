@@ -42,7 +42,7 @@ boardListGet = boardList.schema_model('boardListGet',{
             "content": {
               "type": "string"
             },
-            "writer": {
+            "userNo": {
               "type": "string"
             }
           },
@@ -50,7 +50,7 @@ boardListGet = boardList.schema_model('boardListGet',{
             "boardNo",
             "title",
             "content",
-            "writer"
+            "userNo"
           ]
         }
       ]
@@ -75,7 +75,7 @@ class boardListApi(Resource):
     # swagger 파라미터 #
     parser = boardList.parser()
     parser.add_argument('Authorization', type = str, required=False, location='headers', help='로그인 token',)
-    parser.add_argument('searchType', type = str, required=False, location='body', help='검색유형 (title,writer)')
+    parser.add_argument('searchType', type = str, required=False, location='body', help='검색유형 (title,userNo)')
     parser.add_argument('searchText', type = str, required=False, location='body', help='검색어')
     parser.add_argument('page', type = int, required=False, location='body', help='현재 페이지')
     parser.add_argument('pageSize', type = int, required=False, location='body', help='페이지당 데이터 수')
@@ -86,7 +86,7 @@ class boardListApi(Resource):
     def get(self):
         """
         게시판 리스트
-        searchType : title, writer
+        searchType : title, userNo
         일반: searchType, searchText, page, pageSize
         """
 
@@ -154,8 +154,8 @@ class boardListApi(Resource):
                 if searchType is not None and searchText is not None :
                     if searchType == 'title' :
                             par_sql = sql+ " AND title LIKE '%%%s%%' " %searchText
-                    elif searchType == 'writer' :
-                        par_sql = sql+ " AND writer LIKE '%%%s%%' " %searchText    
+                    elif searchType == 'userNo' :
+                        par_sql = sql+ " AND userNo LIKE '%%%s%%' " %searchText    
                     elif searchType == 'content' :
                         par_sql = sql+ " AND content LIKE '%%%s%%' " %searchText
                     else :
@@ -165,7 +165,7 @@ class boardListApi(Resource):
 
                 if result['cnt'] > 0 : 
 
-                    sql = """SELECT boardNo, title, writer
+                    sql = """SELECT boardNo, title, userNo
                     FROM board
                     WHERE disabled = 0 """
 
@@ -173,8 +173,8 @@ class boardListApi(Resource):
                 if searchType is not None and searchText is not None:
                     if searchType == 'title':
                         sql = sql + "AND title LIKE '%%%s%%' " %searchText
-                    elif searchType == 'writer':
-                        sql = sql + "AND writer LIKE '%%%s%%' " %searchText
+                    elif searchType == 'userNo':
+                        sql = sql + "AND userNo LIKE '%%%s%%' " %searchText
                     elif searchType == 'content':    
                         sql = sql + "AND content LIKE '%%%s%%' " %searchText
                     else :
@@ -193,7 +193,7 @@ class boardListApi(Resource):
                     item['boardNo'] = row['boardNo']
                     item['title'] = row['title']
                     item['content'] = row['content']
-                    item['writer'] = row['writer']
+                    item['userNo'] = row['userNo']
                     itemList.append(item)
 
                 data['totalCount'] = result['cnt']

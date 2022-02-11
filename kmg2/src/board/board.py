@@ -7,7 +7,7 @@ from flask import request
 from flask_restx import Resource, Namespace, reqparse
 from werkzeug.datastructures import FileStorage
 #from werkzeug import secure_filename
-import datetime
+import datetime, uuid, pathlib, os
 from src.common.util import *
 
 board = Namespace('board')
@@ -22,16 +22,16 @@ boardGetModel = board.schema_model('',{
       "type": "string"
     },
     "boardNo": {
-      "type": "integer"
+      "type": "string"
     },
     "title": {
-      "type": "null"
+      "type": "string"
     },
     "content": {
-      "type": "null"
+      "type": "string"
     },
-    "writer": {
-      "type": "null"
+    "userName": {
+      "type": "string"
     },
     "createdDate": {
       "type": "string"
@@ -42,7 +42,7 @@ boardGetModel = board.schema_model('',{
     "boardNo",
     "title",
     "content",
-    "writer",
+    "userName",
     "createdDate"
   ]
 })
@@ -54,10 +54,14 @@ boardPostModel = board.schema_model('',{
   "properties": {
     "timestamp": {
       "type": "string"
-    }
+    },
+     "boardNo": {
+        "type": "integer"
+     }
   },
   "required": [
     "timestamp"
+    "boardNo"
   ]
 })
 
@@ -135,7 +139,10 @@ class boardApi(Resource):
                 boardNo = parameter['boardNo']
 
                 # 입력값 등록 확인 #
-                sql = """SELECT COUNT(*) AS cnt FROM board WHERE disabled = 0 AND boardNo = %s"""
+                sql = """SELECT COUNT(*) AS cnt 
+                FROM board 
+                WHERE disabled = 0 
+                AND boardNo = %s"""
                 cursor.execute(query=sql, args=boardNo)
                 result = cursor.fetchone()
 
@@ -148,14 +155,15 @@ class boardApi(Resource):
                     cursor.execute(query=sql, args=boardNo)
 
                     # 상세 조회 
-                    sql = """SELECT writer, title, content, createdDate, createdUpdate
-                    FROM board
-                    WHERE boardNo = %s
-                    AND disabled = 0 AND boardNo = %s """    
+                    sql = """SELECT U.userName, B.title, B.content, B.createdDate
+                    FROM board B 
+                    LEFT JOIN user U ON B.userNo=U.userNo
+                    WHERE B.disabled = 0 
+                    AND B.boardNo = %s """    
                     cursor.execute(query=sql, args=boardNo)
 
                     result = cursor.fetchone()
-                    data['writer'] = result['writer']
+                    data['userName'] = result['userName']
                     data['title'] = result['title']
                     data['content'] = result['content']
                     data['createdDate'] = result['createdDate'].strftime('%Y-%m-%d %H:%M')
@@ -185,7 +193,6 @@ class boardApi(Resource):
     parser.add_argument('Authorization', required=True, location='headers', help='로그인 token',) #로그인 한사람만 볼 수있음
     parser.add_argument('title', required=True, location='body', help='제목',)
     parser.add_argument('content', required=True, location='body', help='내용')
-    parser.add_argument('writer', required=True, location='작성자', help='작성자')
     parser.add_argument('file', type=FileStorage, required=False, location='files', help='파일')
     
     @board.expect(parser)
@@ -195,7 +202,7 @@ class boardApi(Resource):
     def post(self):
         """
         게시판 글 등록
-        필수: Authorization, title, content, writer
+        필수: Authorization, title, content, userName
         일반: file
         """
 
@@ -215,8 +222,7 @@ class boardApi(Resource):
         parser = reqparse.RequestParser()
         parser.add_argument('title', type=str, required=True)
         parser.add_argument('content', type=str, required=True)
-        parser.add_argument('writer', type=str, required=True)          
-    
+               
         parameter = parser.parse_args()
 
         # DB 시작 #
@@ -226,7 +232,7 @@ class boardApi(Resource):
             hasParam = True
 
             if 'userId' not in payload or payload['userId'] =='':
-                hasparam = False
+                hasParam = False
 
             if 'title' not in parameter or parameter['title'] == '':
                 hasParam = False
@@ -234,25 +240,52 @@ class boardApi(Resource):
             if 'content' not in parameter or parameter['content'] == '':
                 hasParam = False
 
-            if 'writer' not in parameter or parameter['writer'] == '':
-                hasParam = False
-
             if hasParam:
                 userId = payload['userId']
                 title = parameter['title']
                 content = parameter['content']
-                writer = parameter['writer']
-
+            
                 #파일 
-                if 'file' not in request.files : 
-                    hasParam = False
-                    paramStr = 'file'
+                file = None
+                if request.files['file'] is not None  : 
+                    file = request.files['file'] 
 
                 sql = """
-                      INSERT INTO board (title, content, writer)
-                      VALUES (%s,%s,%s)"""
+                      SELECT COUNT(*) AS cnt
+                      FROM user
+                      WHERE disabled = 0
+                      AND userId = %s 
+                      """
+                cursor.execute(query=sql, args=(userId))
+                result = cursor.fetchone()
+                
+                if result ['cnt'] == 1 :
 
-                cursor.execute(query=sql, args=(title, content, writer))
+                    sql = """INSERT INTO board (userNo, title, content, fileNo)
+                    CALUES (%s, %s, %s, %s)"""
+                    cursor.execute(query=sql, args=(userId, title, content, fileNo))
+                    data['boardNo'] = cursor.lastrowid
+                    
+                    
+                    fileNameOrigin = file.filename
+
+                    fileName = str(uuid.uuid4()) +  pathlib.Path(fileNameOrigin).suffix
+
+                    contentType = file.content_type
+
+                    filePath = 'files/board/'
+                    
+                    fileFullPath = filePath + fileName
+
+                    file.save(fileFullPath)
+
+                    fileSize = os.path.getsize(fileFullPath)
+
+                    sql = """INSERT INTO files (fileName, fileNameOrigin, fileType, fileSize, fileUrl, boardNo) 
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(query=sql, args=(fileName, fileNameOrigin, contentType, fileSize, fileFullPath, data['boardNo']))
+                    fileNo = cursor.lastrowid
 
             else:
                 statusCode = 404
@@ -277,8 +310,8 @@ class boardApi(Resource):
     parser.add_argument('Authorization', required=True, location='headers', help='로그인 token',)
     parser.add_argument('boardNo',type=int,required=True, location='body', help='게시판 번호')
     parser.add_argument('title',type=str,required=True, location='body', help='제목')
-    parser.add_argument('wirter',type=str,required=True, location='body', help='작성자')
     parser.add_argument('content',type=str,required=False, location='body', help='내용')
+    parser.add_argument('file', type=FileStorage, required=False, location='files', help='파일')
 
     @board.expect(parser)
 
@@ -287,7 +320,7 @@ class boardApi(Resource):
     def put(self):
         """
         게시판수정
-        필수: Authorization, boardNo,title,writer,content
+        필수: Authorization, boardNo, title, userName, content
         """
 
         statusCode = 200
@@ -306,9 +339,8 @@ class boardApi(Resource):
         parser = reqparse.RequestParser()
         parser.add_argument('boardNo', type=int, required=True)
         parser.add_argument('title', type=str, required=True)
-        parser.add_argument('writer', type=str, required=True)
-        parser.add_argument('content', type=str, required=False)
-
+        parser.add_argument('content', type=str, required=True)
+       
         parameter = parser.parse_args()
 
         # DB 시작 #       
@@ -325,33 +357,51 @@ class boardApi(Resource):
             if 'title' not in parameter or parameter['title'] =='':
                 hasParam = False
 
-            if 'writer' not in parameter or parameter['writer'] =='':
+            if 'content' not in parameter or parameter['content'] =='':
+               
                 hasParam = False
-
             if hasParam:
+                userId = payload['userId']
                 boardNo = parameter['boardNo']
                 title = parameter['title']
-                writer = parameter['writer']
-
-                content = None
-                if 'content' in parameter :
-                    content = parameter['content']
+                content = parameter['content']
+                
+                file = None
+                if 'file' in request.files :
+                    file = request.files['file']
 
 ######           
                 # 입력값 등록 확인 #
-                sql = """SELECT COUNT(*) AS cnt, writer, title
+                sql = """SELECT COUNT(*) AS cnt, userName, title
                 FROM board
                 WHERE disabled = 0
                 AND boardNo = %s 
-                AND writer = %s
+                AND userName = %s
                 AND title = %s"""
-                cursor.execute(query=sql, args=(boardNo, writer, title))
+                cursor.execute(query=sql, args=(boardNo, userId, title))
                 result = cursor.fetchone()
 
                 if result['cnt'] == 1:
                     sql = """UPDATE board SET title = %s, content = %s
-                    WHERE boardNo = %s AND writer = %s AND title = %s """ 
-                    cursor.execute(query=sql, args=(title, writer, boardNo))
+                    WHERE boardNo = %s AND userName = %s """ 
+                    cursor.execute(query=sql, args=(title, content, boardNo, userId))
+
+                    if file :
+                        fileNameOrigin = file.filename
+
+                        filename = str(uuid.uuid4()) +  pathlib.Path(fileNameOrigin).suffix
+
+                        contentType = file.content_type
+
+                        filePath = 'files/board/'
+                        
+                        fileFullPath = filePath + filename
+
+                        file.save(fileFullPath)
+
+                        sql = """INSERT INTO board(title, content, userName, fileNameOrigin) VALUES (%s, %s, %s, %s)
+                        """
+                        cursor.execute(query=sql, args=(title, content, userId, fileNameOrigin))
 
 
                 else:
@@ -422,14 +472,17 @@ class boardApi(Resource):
                 boardNo = parameter['boardNo']
 
                 # 입력값 등록 확인 #
-                sql = "SELECT COUNT(*) AS cnt FROM user WHERE boardNo = %s"
-                cursor.execute(query=sql, args=boardNo)
+                sql = """SELECT COUNT(*) AS cnt FROM board WHERE boardNo = %s
+                AND userName = %s
+                """
+                cursor.execute(query=sql, args=(boardNo,userId))
                 result = cursor.fetchone()
 #####
                 if result['cnt'] == 1:
                     
-                    sql = "DELETE FROM board WHERE boardNo = %s"
-                    cursor.execute(query=sql, args=boardNo)
+                    sql = """UPDATE board SET disabled = 1 WHERE boardNo = %s
+                    AND wirter = %s"""
+                    cursor.execute(query=sql, args=(boardNo, userId))
 
                 else:
                     statusCode = 400

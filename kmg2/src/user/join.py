@@ -11,7 +11,23 @@ from src.common.util import *
 join = Namespace('join')
 
 # 메소드별 모델 생성
-joinPostModel = join.schema_model('joinPostModel', {})
+joinPostModel = join.schema_model('joinPostModel', {
+
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "timestamp": {
+            "type": "string"
+        },
+        "userNo": {
+            "type": "integer"
+        }
+    },
+    "required": [
+        "timestamp",
+        "userNo"
+    ]
+})   
 
 @join.route('', methods=['POST'])
 
@@ -110,7 +126,9 @@ class JoinApi(Resource):
                 if hasProcess:
 
                     # ID 중복체크
-                    sql = """SELECT COUNT(*) AS cnt FROM `user` WHERE userId = %s """
+                    sql = """SELECT COUNT(*) AS cnt 
+                    FROM user 
+                    WHERE userId = %s """
                     cursor.execute(query=sql, args=userId)
                     result = cursor.fetchone()
 
